@@ -8,6 +8,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+let chatHistory = [];
+
 console.log("KEY LOADED:", !!process.env.GEMINI_API_KEY);
 
 // ✅ CHAT ROUTE (REST API - GUARANTEED WORKING)
@@ -16,58 +18,46 @@ app.post("/chat", async (req, res) => {
     const { message, type } = req.body;
 
     if (!message) {
-      return res.status(400).json({ error: "Message required" });
+      return res.status(400).json({ error: "Message is required" });
     }
 
+    // 1. Save user message
+    chatHistory.push({ role: "user", text: message });
+
     const prompt = `
-You are a smart AI concierge for an Ethiopian resort.
+You are a smart AI concierge for a modern Ethiopian resort.
+
+Context:
+- Lake view restaurant
+- Coffee ceremony
+- Spa
+- Boat rides
+- Cultural events
 
 Guest type: ${type || "general"}
 
-Help with:
-- spa
-- lake view dinner
-- coffee ceremony
-- boat rides
-- cultural shows
+Conversation so far:
+${chatHistory.map((m) => `${m.role}: ${m.text}`).join("\n")}
 
-User: ${message}
+Rules:
+- Keep reply under 3 sentences
+- Be friendly
+- Recommend at least one service
+
+User message:
+${message}
 `;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: prompt }],
-            },
-          ],
-        }),
-      },
-    );
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
 
-    const data = await response.json();
-
-    const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Try our spa 💆‍♀️ or lake view dinner 🌅";
+    // 2. Save AI reply
+    chatHistory.push({ role: "ai", text });
 
     res.json({ reply: text });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
-});
-
-// TEST
-app.get("/", (req, res) => {
-  res.send("AI Resort Backend Running 🚀");
-});
-
-app.listen(5000, () => {
-  console.log("Server running on http://localhost:5000");
 });
