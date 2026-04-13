@@ -15,8 +15,6 @@ app.use(express.json());
 
 const prisma = new PrismaClient();
 
-// ✅ TEMP MEMORY (chat history)
-let chatHistory = [];
 
 console.log("KEY LOADED:", !!process.env.GEMINI_API_KEY);
 
@@ -106,58 +104,57 @@ app.post("/login", async (req, res) => {
   }
 });
 // =====================
-// CHAT ROUTE
+// CHAT ROUTE (DATABASE VERSION)
 // =====================
 app.post("/chat", authMiddleware, async (req, res) => {
   try {
-    const userId = req.userId; 
-    console.log("User ID:", userId);
+    const userId = req.userId;
+
     const { message, type } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    // 1. Save user message
-    chatHistory.push({ role: "user", text: message });
+    // 💾 1. Save USER message to database
+    await prisma.message.create({
+      data: {
+        text: message,
+        role: "user",
+        userId,
+      },
+    });
+    // Load full chat history from DB
+    const history = await prisma.message.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+    });
 
+    // 🤖 2.Build conversation context (memory)
     const prompt = `
-You are a smart AI concierge for a modern Ethiopian resort.
-
-Context:
-- Lake view restaurant
-- Coffee ceremony
-- Spa
-- Boat rides
-- Cultural events
-
-Guest type: ${type || "general"}
-
 Conversation so far:
-${chatHistory.map((m) => `${m.role}: ${m.text}`).join("\n")}
-
-Rules:
-- Keep reply under 3 sentences
-- Be friendly
-- Recommend at least one service
+${history.map((m) => `${m.role}: ${m.text}`).join("\n")}
 
 User message:
 ${message}
 `;
+    const aiReply = "This is a placeholder AI response using memory.";
+    // 💾 3. Save AI message to database
+    await prisma.message.create({
+      data: {
+        text: aiReply,
+        role: "ai",
+        userId,
+      },
+    });
 
-    // ⚠️ NOTE: model must exist (Gemini or OpenAI)
-   const text =
-     "Welcome! You can enjoy our spa, coffee ceremony, or lake view restaurant 😊";
-    // 2. Save AI reply
-    chatHistory.push({ role: "ai", text });
-
-    res.json({ reply: text });
+    // 📤 4. Send response to frontend
+    res.json({ reply: aiReply });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
   }
 });
-
 // =====================
 // START SERVER
 // =====================
